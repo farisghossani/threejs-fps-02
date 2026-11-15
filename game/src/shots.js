@@ -1,8 +1,8 @@
-// The capture setups: ?shot=start|play|end&seed=N. Each one drives the real simulation with
+// The capture setups: ?shot=start|play|plant|end&seed=N. Each one drives the real simulation with
 // scripted input until the game reaches the state the frame is meant to show, then stops. Nothing
-// is posed by hand — the kill, the damage, the ammo count and the round result are what the
-// simulation produced — and because the simulation is seeded and stepped at a fixed rate, the same
-// query rebuilds the same frame.
+// is posed by hand — the kill, the plant, the money spent, the damage on the health bar and the
+// round result are what the simulation produced — and because the simulation is seeded and stepped
+// at a fixed rate, the same query rebuilds the same frame.
 import { CONFIG } from './config.js';
 import { PLAYER_SPAWN } from './arena.js';
 import { clamp } from './util.js';
@@ -40,6 +40,23 @@ function advance(sim, drive, ticks, each) {
   }
 }
 
+// The round opens in its buy phase, so every setup that wants to shoot first has to let it run out.
+function skipBuy(sim, drive) {
+  let guard = 0;
+  while (sim.view.phase === 'buy' && guard < 1200) {
+    advance(sim, drive, 1);
+    guard += 1;
+  }
+}
+
+// One press of the shop, with the menu open the way the key opens it.
+function buy(sim, drive, key, ticks = 2) {
+  sim.setBuyOpen(true);
+  advance(sim, drive, 1, () => drive.hold(key));
+  advance(sim, drive, ticks);
+  drive.release(key);
+}
+
 function aimAt(player, x, y, z) {
   const eyeX = player.state.position.x;
   const eyeY = player.state.position.y + player.viewHeight();
@@ -63,10 +80,14 @@ function post(bot, x, z, waypoint) {
   state.aimPitch = 0;
   state.alive = true;
   state.health = CONFIG.bot.health;
-  bot.ai.waypoint = waypoint;
+  bot.ai.waypoint = Math.min(waypoint, bot.route.length - 1);
   bot.ai.mode = 'patrol';
+  bot.ai.facing = state.yaw;
   bot.ai.hold = 0;
+  bot.ai.scan = 0;
   bot.ai.seen = 0;
+  bot.ai.stuck = 0;
+  bot.ai.sidestep = 0;
 }
 
 function place(player, x, z, yaw, pitch = 0) {
@@ -78,24 +99,34 @@ function place(player, x, z, yaw, pitch = 0) {
   player.state.recoilYaw = 0;
 }
 
-// The opening frame: the round has just started, the clock is full, the banner is up and the
-// defenders are walking off their posts.
+// The opening frame: the round has just opened, the clock is on the buy phase, the banner is up,
+// the shop is open and this round's money has already been spent — two purchases the simulation
+// made through the same code the keyboard reaches.
 function startShot(sim, drive) {
-  place(sim.player, PLAYER_SPAWN.x, PLAYER_SPAWN.z, PLAYER_SPAWN.yaw, 0.01);
-  advance(sim, drive, 54);
+  place(sim.player, PLAYER_SPAWN.x, PLAYER_SPAWN.z, -0.22, 0.03);
+  sim.setBuyOpen(true);
+  advance(sim, drive, 1, () => drive.hold('Digit2'));
+  advance(sim, drive, 1, () => drive.hold('Digit4'));
+  advance(sim, drive, 26);
+  drive.release('Digit2');
+  drive.release('Digit4');
 }
 
 // The firefight: the player pushes the west lane, drops the defender holding its mouth, takes
-// return fire from the two behind him while he advances, then stops to answer — the frame freezes
-// with that burst in the air and the damage already taken on the health bar.
+// return fire from the two behind him while he advances, then stops to answer with the rifle and a
+// frag — the frame freezes with the burst and the grenade both in the air.
 function playShot(sim, drive) {
   const player = sim.player;
   const bots = sim.bots.bots;
 
+  buy(sim, drive, 'Digit4');
+  sim.setBuyOpen(false);
+  skipBuy(sim, drive);
+
   place(player, -8.4, 7.6, 0, 0);
-  post(bots[0], -8.6, 2.4, 2);
-  post(bots[1], -8.6, -2.2, 1);
-  post(bots[2], -9, -6.8, 0);
+  post(bots[0], -8.6, 3.4, 2);
+  post(bots[1], -8.8, -0.6, 1);
+  post(bots[2], -9.1, -4.8, 0);
   advance(sim, drive, 22);
 
   // First contact: a burst into the nearest defender's head, which drops him where he stands.
@@ -108,14 +139,64 @@ function playShot(sim, drive) {
     aimAt(player, bots[1].state.position.x, 1.35, bots[1].state.position.z);
   });
 
-  // Down the lane under fire, then the answer the frame freezes on.
+  // Down the lane under fire.
   drive.hold('KeyW');
   advance(sim, drive, 26);
   drive.release('KeyW');
-  advance(sim, drive, 4, () => {
+
+  // The answer the frame freezes on: the frag goes out, and the last burst leaves the barrel with
+  // it still in the air.
+  advance(sim, drive, 1, () => {
+    drive.hold('KeyG');
+    aimAt(player, bots[1].state.position.x, 1.25, bots[1].state.position.z);
+  });
+  advance(sim, drive, 9, () => {
     aimAt(player, bots[1].state.position.x, 1.35, bots[1].state.position.z);
     drive.state.firing = true;
   });
+  drive.release('KeyG');
+}
+
+// The objective, live: the attacker has planted at A, backed off the case, and the defender the
+// bomb sent him to is down on it cutting the wires — with a frag on its way to him.
+function plantShot(sim, drive) {
+  const player = sim.player;
+  const bots = sim.bots.bots;
+
+  buy(sim, drive, 'Digit4', 2);
+  buy(sim, drive, 'Digit5', 3);
+  sim.setBuyOpen(false);
+  skipBuy(sim, drive);
+
+  place(player, 0.8, -12.2, 0, -0.45);
+  // The man who ends up on the wires starts in the gap between the site's two covers, walking away
+  // from the plant — so the plant itself is clean. The rest start in their lanes, where the
+  // objective has to pull them from.
+  post(bots[0], -11.2, -4, 0);
+  post(bots[1], 0.8, -10.4, 1);
+  post(bots[2], 12.8, -2, 0);
+  post(bots[3], 15, -7, 3);
+  advance(sim, drive, 10);
+
+  // Hold the plant key inside site A for the whole 3.2 seconds the simulation asks for.
+  drive.hold('KeyE');
+  advance(sim, drive, 200);
+  drive.release('KeyE');
+
+  // Back off the case, the way anyone would, and then watch it: the fuse is running, a defender is
+  // down on the wires and the compound is answering over the top of him.
+  drive.hold('KeyS');
+  advance(sim, drive, 62);
+  drive.release('KeyS');
+  advance(sim, drive, 208, () => aimAt(player, 0.8, 0.25, -12.2));
+
+  // The answer: a frag aimed at the man cutting the fuse, still in the air when the frame freezes.
+  advance(sim, drive, 1, () => {
+    drive.hold('KeyG');
+    aimAt(player, bots[1].state.position.x, 0.6, bots[1].state.position.z);
+  });
+  advance(sim, drive, 11, () => aimAt(player, bots[1].state.position.x, 0.7, bots[1].state.position.z));
+  drive.release('KeyG');
 }
 
 // The end of a round: four defenders lined out along the lane they were holding, cleared one burst
@@ -124,29 +205,60 @@ function endShot(sim, drive) {
   const player = sim.player;
   const bots = sim.bots.bots;
 
-  place(player, -8.2, 6.6, 0, 0);
-  post(bots[0], -8.6, -1.4, 2);
-  post(bots[1], -8.6, -4.6, 1);
-  post(bots[2], -8.6, -7.8, 0);
-  post(bots[3], -8.6, -10.6, 0);
-  advance(sim, drive, 20);
+  buy(sim, drive, 'Digit5', 3);
+  sim.setBuyOpen(false);
+  skipBuy(sim, drive);
 
-  for (const bot of bots) {
+  // Two defenders hold the long lane, two hold the ground behind the central mass: the fight the
+  // round would actually give an attacker who pushes this line.
+  place(player, -8.2, 6.6, 0, 0);
+  post(bots[0], -8.6, -2.6, 0);
+  post(bots[1], -8.8, -5.8, 1);
+  post(bots[2], 0, -6.6, 0);
+  post(bots[3], 3.0, -12.6, 2);
+  advance(sim, drive, 18);
+
+  // The aim follows the nearest defender still standing, the trigger stays down and the reload is
+  // the same key a player presses. The round decides when it is over — the result panel in the
+  // frame is the one the game puts up on its own.
+  function sweep(ticks, until) {
     let guard = 0;
-    while (bot.state.alive && guard < 60) {
+    while (guard < ticks && sim.view.kills < until && sim.view.phase === 'live') {
+      let target = null;
+      let nearest = Infinity;
+      for (const bot of bots) {
+        if (!bot.state.alive) continue;
+        const dx = bot.state.position.x - player.state.position.x;
+        const dz = bot.state.position.z - player.state.position.z;
+        const distance = dx * dx + dz * dz;
+        if (distance < nearest) {
+          nearest = distance;
+          target = bot;
+        }
+      }
       advance(sim, drive, 1, () => {
-        aimAt(player, bot.state.position.x, 1.5, bot.state.position.z);
+        if (target) aimAt(player, target.state.position.x, 1.05, target.state.position.z);
+        if (sim.view.mag === 0) drive.hold('KeyR');
+        else drive.release('KeyR');
         drive.state.firing = true;
       });
       guard += 1;
     }
     drive.state.firing = false;
-    advance(sim, drive, 10);
+    drive.release('KeyR');
   }
-  advance(sim, drive, 14);
+
+  sweep(400, 2);
+
+  // Beat the first two, then push the lane to the mouth of the site and finish it.
+  drive.hold('KeyW');
+  advance(sim, drive, 92);
+  drive.release('KeyW');
+  sweep(600, 4);
+  advance(sim, drive, 20);
 }
 
-const SHOTS = { start: startShot, play: playShot, end: endShot };
+const SHOTS = { start: startShot, play: playShot, plant: plantShot, end: endShot };
 
 export function isShot(name) {
   return Object.hasOwn(SHOTS, name);

@@ -5,22 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BLACKSITE — a three.js tactical FPS</title>
 <style>
-  /* Look plan: concrete grey for the world, one warm accent for everything the player acts on,
-     one hostile red for the other side. Every colour below is one of the eight in palette.js. */
+  /* Look plan: warm concrete for the world, one orange for everything the player acts on and for
+     the site marked A, one cool signal colour for site B, one hostile red for the other team.
+     Every colour below is a name in palette.js. */
   :root {
-    --canvas: #0c1015;
-    --surface: #171d25;
-    --hairline: #242e39;
-    --stone: #3a4450;
-    --ink: #e6ecf2;
-    --muted: #8a97a5;
+    --canvas: #141a20;
+    --haze: #3a4650;
+    --floor: #7b838c;
+    --wall: #5a636d;
+    --stone: #8d949c;
+    --panel: #454e59;
+    --trim: #333c46;
+    --timber: #7d6a4c;
+    --ink: #eef3f8;
+    --muted: #a3b0bd;
     --accent: #ff9f2e;
-    --hostile: #d3523f;
+    --signal: #4fb6cf;
+    --hostile: #e0503a;
+    --hazard: #e8c245;
     --radius-panel: 4px;
     --radius-control: 8px;
     --font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
     --font-readout: ui-monospace, 'SF Mono', Menlo, monospace;
-    --hud-shadow: 0 1px 3px rgba(0, 0, 0, .8);
+    --hud-shadow: 0 1px 3px rgba(0, 0, 0, .85);
+    --hud-plate: color-mix(in srgb, var(--canvas) 62%, transparent);
   }
   * { box-sizing: border-box; }
   html, body {
@@ -57,12 +65,12 @@
     justify-content: center;
     gap: 40px;
     padding: 12px 0 10px;
-    background: linear-gradient(to bottom, color-mix(in srgb, var(--canvas) 82%, transparent), transparent);
-    border-bottom: 1px solid color-mix(in srgb, var(--hairline) 60%, transparent);
+    background: linear-gradient(to bottom, color-mix(in srgb, var(--canvas) 84%, transparent), transparent);
   }
   #topbar .stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
   #topbar .readout { font-size: 20px; }
   #timer .readout { font-size: 24px; }
+  #timer.buy .readout { color: var(--signal); }
   #timer.critical .readout { color: var(--accent); }
 
   #score-panel {
@@ -70,11 +78,11 @@
     top: 14px;
     right: 28px;
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 2px;
+    gap: 22px;
   }
+  #score-panel .stat { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
   #score-panel .readout { font-size: 20px; }
+  #cash .readout { color: var(--hazard); }
 
   #feed {
     position: fixed;
@@ -97,7 +105,7 @@
 
   #banner {
     position: fixed;
-    top: 96px;
+    top: 92px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -122,6 +130,69 @@
     opacity: .82;
     text-shadow: var(--hud-shadow);
   }
+
+  /* The objective, under the banner: what the bomb is doing and what to do about it. */
+  #bomb {
+    position: fixed;
+    top: 140px;
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 300px;
+    padding: 7px 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    background: var(--hud-plate);
+    border-top: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  #bomb[hidden] { display: none; }
+  #bomb.armed { border-color: color-mix(in srgb, var(--hostile) 70%, transparent); }
+  #bomb-line {
+    font-family: var(--font-readout);
+    font-size: 13px;
+    letter-spacing: .14em;
+    color: var(--accent);
+    text-align: center;
+    text-shadow: var(--hud-shadow);
+  }
+  #bomb.armed #bomb-line { color: var(--hostile); }
+  #bomb-bar, #plant-bar, #defuse-bar {
+    width: 240px;
+    height: 4px;
+    background: color-mix(in srgb, var(--trim) 80%, transparent);
+  }
+  #bomb-bar[hidden] { display: none; }
+  #bomb-fill { display: block; height: 100%; width: 0; background: var(--hostile); }
+  #bomb-sub {
+    font-family: var(--font-readout);
+    font-size: 10px;
+    letter-spacing: .16em;
+    color: var(--muted);
+    text-shadow: var(--hud-shadow);
+  }
+
+  /* Planting: the bar the attacker watches while the crosshair is on the ground. */
+  #plant {
+    position: fixed;
+    left: 50%;
+    top: calc(50% + 60px);
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  #plant[hidden] { display: none; }
+  #plant-label {
+    font-family: var(--font-readout);
+    font-size: 11px;
+    letter-spacing: .2em;
+    color: var(--accent);
+    text-shadow: var(--hud-shadow);
+  }
+  #plant-fill { display: block; height: 100%; width: 0; background: var(--accent); }
 
   /* The crosshair is a readout: --gap is the cone the next round will leave in. */
   #crosshair {
@@ -177,10 +248,13 @@
   #health .readout { font-size: 40px; line-height: 1; }
   #health.critical .readout { color: var(--hostile); }
   #health.hurt .readout { color: var(--accent); }
+  #vitals { display: flex; align-items: baseline; gap: 12px; }
+  #armour-value { font-family: var(--font-readout); font-size: 15px; color: var(--signal); }
+  #armour-value[hidden] { display: none; }
   #health-bar {
     width: 168px;
     height: 5px;
-    background: color-mix(in srgb, var(--hairline) 80%, transparent);
+    background: color-mix(in srgb, var(--trim) 85%, transparent);
   }
   #health-fill {
     display: block;
@@ -215,6 +289,9 @@
   #ammo[data-state="empty"] #ammo-mag { color: var(--hostile); }
   #ammo[data-state="reloading"] #ammo-mag { color: var(--accent); }
   #ammo[data-state="reloading"] #ammo-state { color: var(--accent); }
+  #kit { display: flex; gap: 14px; font-family: var(--font-readout); font-size: 12px; color: var(--muted); }
+  #kit .slot { letter-spacing: .08em; }
+  #kit .slot.held { color: var(--ink); }
 
   .overlay {
     position: fixed;
@@ -230,8 +307,8 @@
     max-height: calc(100vh - 48px);
     overflow: auto;
     padding: 26px 30px;
-    background: color-mix(in srgb, var(--surface) 94%, transparent);
-    border: 1px solid var(--hairline);
+    background: color-mix(in srgb, var(--panel) 94%, transparent);
+    border: 1px solid var(--trim);
     border-radius: var(--radius-panel);
   }
   .panel .eyebrow {
@@ -282,10 +359,25 @@
   #play:hover { background: var(--ink); border-color: var(--ink); }
   #play:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+  /* The capture size is 1280x480, and a panel that has to scroll is a panel the reader sees half
+     of. Below the height the panel needs, it tightens instead of overflowing. */
+  @media (max-height: 620px) {
+    .overlay { padding: 12px; }
+    .panel {
+      width: min(560px, 100%);
+      max-height: calc(100vh - 24px);
+      padding: 16px 20px;
+    }
+    .panel h1 { font-size: 25px; margin-bottom: 8px; }
+    .panel p { font-size: 13px; margin-bottom: 12px; }
+    #overlay-stats { gap: 2px 14px; margin-bottom: 12px; font-size: 12px; }
+    .keys { margin-top: 12px; padding-top: 10px; }
+  }
+
   .keys {
     margin: 18px 0 0;
     padding: 14px 0 0;
-    border-top: 1px solid var(--hairline);
+    border-top: 1px solid var(--trim);
     list-style: none;
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -297,13 +389,66 @@
   .keys kbd {
     min-width: 22px;
     padding: 2px 6px;
-    border: 1px solid var(--hairline);
+    border: 1px solid var(--trim);
     border-radius: var(--radius-panel);
     background: color-mix(in srgb, var(--canvas) 70%, transparent);
     font-family: var(--font-readout);
     font-size: 11px;
     color: var(--ink);
     text-align: center;
+  }
+
+  /* The shop. It opens at the start of a round and the round does not start until it closes. */
+  #buy {
+    position: fixed;
+    right: 28px;
+    top: 110px;
+    width: 430px;
+    padding: 14px 16px 12px;
+    background: color-mix(in srgb, var(--panel) 88%, transparent);
+    border: 1px solid var(--trim);
+    border-right: 2px solid var(--hazard);
+    border-radius: var(--radius-panel);
+  }
+  #buy[hidden] { display: none; }
+  #buy-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 10px;
+  }
+  #buy-title {
+    font-family: var(--font-readout);
+    font-size: 11px;
+    letter-spacing: .2em;
+    color: var(--hazard);
+  }
+  #buy-cash { font-family: var(--font-readout); font-size: 20px; color: var(--hazard); }
+  #buy-rows { display: grid; gap: 3px; }
+  .buy-row {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    align-items: baseline;
+    gap: 10px;
+    padding: 5px 6px;
+    background: color-mix(in srgb, var(--canvas) 55%, transparent);
+    border-left: 2px solid transparent;
+  }
+  .buy-row .key { font-family: var(--font-readout); font-size: 11px; color: var(--muted); }
+  .buy-row .name { font-size: 13px; color: var(--ink); }
+  .buy-row .detail { display: block; font-size: 11px; color: var(--muted); }
+  .buy-row .price { font-family: var(--font-readout); font-size: 13px; color: var(--hazard); }
+  .buy-row.owned { border-left-color: var(--signal); }
+  .buy-row.owned .price { color: var(--signal); }
+  .buy-row.locked .name, .buy-row.locked .price { color: color-mix(in srgb, var(--muted) 70%, transparent); }
+  #buy-note {
+    margin-top: 9px;
+    padding-top: 8px;
+    border-top: 1px solid var(--trim);
+    font-family: var(--font-readout);
+    font-size: 11px;
+    letter-spacing: .1em;
+    color: var(--muted);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -320,11 +465,14 @@
 
   <header id="topbar">
     <div class="stat"><span class="label">Round</span><b class="readout" id="round-value">1</b></div>
-    <div class="stat" id="timer"><span class="label">Round time</span><b class="readout" id="time-value">1:35</b></div>
+    <div class="stat" id="timer"><span class="label" id="time-label">Buy time</span><b class="readout" id="time-value">0:12</b></div>
     <div class="stat"><span class="label">Defenders</span><b class="readout" id="enemy-value">4/4</b></div>
   </header>
 
-  <div id="score-panel"><span class="label">Score</span><b class="readout" id="score-value">0</b></div>
+  <div id="score-panel">
+    <div class="stat"><span class="label">Score</span><b class="readout" id="score-value">0</b></div>
+    <div class="stat" id="cash"><span class="label">Cash</span><b class="readout" id="cash-value">$3200</b></div>
+  </div>
 
   <ul id="feed"></ul>
 
@@ -333,9 +481,23 @@
     <span id="banner-copy">ELIMINATE ALL DEFENDERS HOLDING THE SITE</span>
   </div>
 
+  <div id="bomb" hidden>
+    <span id="bomb-line">CARRY THE BOMB</span>
+    <div id="bomb-bar" hidden><i id="bomb-fill"></i></div>
+    <span id="bomb-sub"></span>
+  </div>
+
+  <div id="plant" hidden>
+    <span id="plant-label">PLANTING</span>
+    <div id="plant-bar"><i id="plant-fill"></i></div>
+  </div>
+
   <div id="health" class="ok">
     <span class="label">Health</span>
-    <b class="readout" id="health-value">100</b>
+    <div id="vitals">
+      <b class="readout" id="health-value">100</b>
+      <span id="armour-value" hidden>ARMOUR 100</span>
+    </div>
     <div id="health-bar"><i id="health-fill"></i></div>
   </div>
 
@@ -345,16 +507,31 @@
       <span id="ammo-mag">30</span><span id="ammo-reserve">/ 120</span>
     </div>
     <span id="ammo-state"></span>
+    <div id="kit">
+      <span class="slot" id="slot-1">1 RIFLE</span>
+      <span class="slot" id="slot-2">2 SMG</span>
+      <span class="slot" id="slot-3">3 SIDEARM</span>
+      <span class="slot" id="slot-4">G FRAG ×0</span>
+    </div>
   </div>
 
   <div id="damage"></div>
+
+  <div id="buy" hidden>
+    <div id="buy-head">
+      <span id="buy-title">BUY — 1 to 5 TO PURCHASE, B TO CLOSE</span>
+      <span id="buy-cash">$3200</span>
+    </div>
+    <div id="buy-rows"></div>
+    <div id="buy-note"></div>
+  </div>
 </div>
 
 <div id="overlay" class="overlay">
   <section class="panel" role="dialog" aria-modal="true" aria-labelledby="overlay-title">
-    <p class="eyebrow" id="overlay-eyebrow">ONE SITE, FOUR DEFENDERS, NINETY-FIVE SECONDS</p>
+    <p class="eyebrow" id="overlay-eyebrow">TWO SITES, FOUR DEFENDERS, ONE BOMB</p>
     <h1 id="overlay-title">BLACKSITE</h1>
-    <p id="overlay-copy">They hold the bunker at the north end. Clear the compound before the clock runs out.</p>
+    <p id="overlay-copy">They hold the bunker. Plant the bomb at A or B, or clear the compound before the clock runs out.</p>
     <dl id="overlay-stats"></dl>
     <button id="play" type="button">Take the site</button>
     <ul class="keys">
@@ -362,10 +539,12 @@
       <li><kbd>Mouse</kbd> Look</li>
       <li><kbd>Click</kbd> Fire</li>
       <li><kbd>R</kbd> Reload</li>
+      <li><kbd>B</kbd> Buy menu</li>
+      <li><kbd>E</kbd> Hold to plant</li>
+      <li><kbd>G</kbd> Frag grenade</li>
+      <li><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> Weapons</li>
       <li><kbd>Ctrl</kbd> Crouch</li>
       <li><kbd>Space</kbd> Jump</li>
-      <li><kbd>1</kbd><kbd>2</kbd> Rifle, sidearm</li>
-      <li><kbd>Esc</kbd> Release the mouse</li>
     </ul>
   </section>
 </div>

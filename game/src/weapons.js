@@ -1,19 +1,19 @@
-// The two weapons, from one table each: a rifle and a sidearm. The table holds every number the
-// gunplay turns on — damage per hit zone, the gap between shots, the reload, the spread it trades
-// for moving, and the recoil it kicks back at the shooter — so the feel of a weapon is one object
-// away from whoever is tuning it. The view models are built once from primitives and animated by
-// state the simulation writes; nothing here reads the clock or the DOM.
-import * as THREE from 'three';
+// The guns, as numbers: damage per hit zone, the gap between shots, the reload, the spread it
+// trades for moving and the recoil it kicks back at the shooter. The table holds every number the
+// gunplay turns on, so the feel of a weapon is one object away from whoever is tuning it; the
+// parts of the gun, and the arms holding them, live in viewmodel.js. Nothing here reads the clock
+// or the DOM — it answers the simulation and is answered by it.
 import { CONFIG } from './config.js';
-import { PALETTE } from './palette.js';
 
 // Damage is per zone: a rifle head shot is lethal outright, a leg shot is not worth the round.
 // spreadStill is the cone when standing, spreadMove is added in full at walking speed, and
 // spreadCrouch multiplies the result when the shooter is low and settled.
 export const WEAPON_DEFS = {
   rifle: {
+    id: 'rifle',
     name: 'AR-11 RIFLE',
-    slot: 1,
+    slot: 0,
+    key: 'Digit1',
     magSize: 30,
     reserve: 120,
     fireGap: 0.096,
@@ -35,9 +35,37 @@ export const WEAPON_DEFS = {
     recoilRecover: 0.35,
     kickViewModel: 0.055,
   },
+  smg: {
+    id: 'smg',
+    name: 'MP-9 SMG',
+    slot: 1,
+    key: 'Digit2',
+    magSize: 25,
+    reserve: 100,
+    fireGap: 0.072,
+    reloadSeconds: 1.9,
+    automatic: true,
+    range: 62,
+    damage: { head: 62, body: 22, legs: 15 },
+    spreadStill: 0.0026,
+    spreadMove: 0.013,
+    spreadAir: 0.05,
+    spreadCrouch: 0.7,
+    bloomPerShot: 0.0026,
+    bloomMax: 0.02,
+    bloomDecay: 0.03,
+    recoilPitch: 0.0054,
+    recoilPitchGrowth: 0.0008,
+    recoilPitchMax: 0.036,
+    recoilYaw: 0.0022,
+    recoilRecover: 0.42,
+    kickViewModel: 0.04,
+  },
   pistol: {
+    id: 'pistol',
     name: 'P-9 SIDEARM',
     slot: 2,
+    key: 'Digit3',
     magSize: 20,
     reserve: 80,
     fireGap: 0.15,
@@ -61,77 +89,12 @@ export const WEAPON_DEFS = {
   },
 };
 
-export const SLOTS = ['rifle', 'pistol'];
+export const SLOTS = ['rifle', 'smg', 'pistol'];
 
-const MUZZLE_LOCAL = { x: 0.24, y: -0.155, z: -0.9 };
-
-function buildRifle(materials) {
-  const model = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.078, 0.09, 0.52), materials.hairline);
-  body.position.set(0.24, -0.19, -0.48);
-  const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.034, 0.36), materials.metal);
-  barrel.position.set(0.24, -0.155, -0.86);
-  const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.068, 0.22), materials.metal);
-  handguard.position.set(0.24, -0.168, -0.66);
-  const magazine = new THREE.Mesh(new THREE.BoxGeometry(0.042, 0.17, 0.1), materials.hairline);
-  magazine.position.set(0.24, -0.3, -0.42);
-  magazine.rotation.x = -0.22;
-  const stock = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.076, 0.22), materials.hairline);
-  stock.position.set(0.24, -0.2, -0.22);
-  const optic = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.032, 0.1), materials.metal);
-  optic.position.set(0.24, -0.12, -0.5);
-  model.add(body, barrel, handguard, magazine, stock, optic);
-  return model;
-}
-
-function buildPistol(materials) {
-  const model = new THREE.Group();
-  const slide = new THREE.Mesh(new THREE.BoxGeometry(0.052, 0.072, 0.28), materials.metal);
-  slide.position.set(0.26, -0.21, -0.44);
-  const grip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, 0.08), materials.hairline);
-  grip.position.set(0.26, -0.32, -0.33);
-  grip.rotation.x = 0.18;
-  const sight = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.016, 0.02), materials.metal);
-  sight.position.set(0.26, -0.17, -0.55);
-  model.add(slide, grip, sight);
-  return model;
-}
-
-export function createWeapons() {
-  const materials = {
-    hairline: new THREE.MeshStandardMaterial({ color: new THREE.Color(PALETTE.hairline), roughness: 0.45, metalness: 0.5 }),
-    metal: new THREE.MeshStandardMaterial({ color: new THREE.Color(PALETTE.stone), roughness: 0.3, metalness: 0.75 }),
-  };
-
-  const view = new THREE.Group();
-  const models = { rifle: buildRifle(materials), pistol: buildPistol(materials) };
-  const flashes = {};
-  const flashLights = {};
-  for (const slot of SLOTS) {
-    const flash = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.26, 0.26),
-      new THREE.MeshBasicMaterial({
-        color: new THREE.Color(PALETTE.accent),
-        transparent: true,
-        opacity: 0.9,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        side: THREE.DoubleSide,
-      }),
-    );
-    flash.position.set(MUZZLE_LOCAL.x, MUZZLE_LOCAL.y, MUZZLE_LOCAL.z + 0.06);
-    flash.visible = false;
-    const light = new THREE.PointLight(new THREE.Color(PALETTE.accent), 0, 6);
-    light.position.set(MUZZLE_LOCAL.x, MUZZLE_LOCAL.y + 0.04, MUZZLE_LOCAL.z + 0.2);
-    view.add(models[slot], flash, light);
-    flashes[slot] = flash;
-    flashLights[slot] = light;
-  }
-  models.pistol.visible = false;
-
+export function createWeapons(economy) {
   const ammo = {};
   for (const slot of SLOTS) {
-    ammo[slot] = { mag: WEAPON_DEFS[slot].magSize, reserve: WEAPON_DEFS[slot].reserve };
+    ammo[slot] = { mag: WEAPON_DEFS[slot].magSize, reserve: WEAPON_DEFS[slot].reserve, owned: false };
   }
 
   const state = {
@@ -151,12 +114,12 @@ export function createWeapons() {
   const def = () => WEAPON_DEFS[SLOTS[state.slot]];
   const current = () => ammo[SLOTS[state.slot]];
 
-  function visibleModels() {
-    models.rifle.visible = state.slot === 0 && state.reloadLeft <= 0;
-    models.pistol.visible = state.slot === 1 && state.reloadLeft <= 0;
+  // A slot the player has not bought cannot be drawn: switching to it is a refusal, not a swap.
+  function owns(slotId) {
+    return ammo[slotId].owned;
   }
 
-  function step(dt, motion) {
+  function step(dt) {
     state.cooldown = Math.max(0, state.cooldown - dt);
     state.flash = Math.max(0, state.flash - dt);
     state.swapLeft = Math.max(0, state.swapLeft - dt);
@@ -169,59 +132,55 @@ export function createWeapons() {
       state.reloadLeft = Math.max(0, state.reloadLeft - dt);
       if (state.reloadLeft === 0 && state.reloadSlot) {
         const slot = state.reloadSlot;
-        const reloadDef = WEAPON_DEFS[slot];
         const pool = ammo[slot];
-        const take = Math.min(reloadDef.magSize - pool.mag, pool.reserve);
+        const take = Math.min(WEAPON_DEFS[slot].magSize - pool.mag, pool.reserve);
         pool.mag += take;
         pool.reserve -= take;
         state.reloadSlot = null;
       }
     }
-
-    // The view model answers to the same state the trigger does: it drops while reloading, lags
-    // behind while running, and kicks back with each shot.
-    const slot = SLOTS[state.slot];
-    const model = models[slot];
-    visibleModels();
-    const speedFactor = motion ? Math.min(1, motion.speed / CONFIG.player.walkSpeed) : 0;
-    const sway = Math.sin(state.swayPhase += dt * (3 + speedFactor * 6)) * 0.006 * speedFactor;
-    model.position.z = state.kick;
-    model.position.y = sway + (motion && !motion.onGround ? -0.02 : 0);
-    model.position.x = sway * 0.8;
-    if (state.reloadLeft > 0) {
-      const progress = Math.min(1, (def().reloadSeconds - state.reloadLeft) * 3);
-      model.rotation.x = -0.7 * progress;
-      model.position.y = -0.12 * progress;
-    } else {
-      model.rotation.x = state.kick * 2.4;
-    }
-
-    const flashing = state.flash > 0;
-    flashes[slot].visible = flashing;
-    flashes[slot].rotation.z = state.flash * 24;
-    flashes[slot].material.opacity = 0.35 + state.flash * 12;
-    flashLights[slot].intensity = flashing ? 14 : 0;
   }
 
-  state.swayPhase = 0;
+  // A new round hands the player everything the money has bought, full.
+  function refill() {
+    for (const slot of SLOTS) {
+      ammo[slot].owned = economy.ownsSlot(WEAPON_DEFS[slot].slot);
+      ammo[slot].mag = WEAPON_DEFS[slot].magSize;
+      ammo[slot].reserve = WEAPON_DEFS[slot].reserve;
+    }
+    state.cooldown = 0;
+    state.reloadLeft = 0;
+    state.reloadSlot = null;
+    state.swapLeft = 0;
+    state.flash = 0;
+    state.kick = 0;
+    state.bloom = 0;
+    state.burst = 0;
+    state.wasFiring = false;
+    if (!owns(SLOTS[state.slot])) {
+      const fallback = SLOTS.findIndex(owns);
+      if (fallback >= 0) state.slot = fallback;
+    }
+  }
 
   return {
-    view,
     state,
+    ammo,
     def,
     current,
-    ammo,
+    owns,
     step,
-    canFire() {
-      const pool = current();
-      return pool.mag > 0 && state.cooldown === 0 && state.reloadLeft === 0 && state.swapLeft === 0;
-    },
-    // Automatic weapons fire while the trigger is held; the sidearm needs a fresh press, which is
-    // why the rising edge is tracked here rather than in the caller.
+    refill,
+    // The rising edge is tracked here rather than in the caller, because the sidearm needs a fresh
+    // press and the automatics do not.
     triggerHeld(firing) {
       const rising = firing && !state.wasFiring;
       state.wasFiring = firing;
       return firing && (def().automatic || rising);
+    },
+    canFire() {
+      const pool = current();
+      return pool.mag > 0 && state.cooldown === 0 && state.reloadLeft === 0 && state.swapLeft === 0;
     },
     fire() {
       const slot = SLOTS[state.slot];
@@ -247,7 +206,8 @@ export function createWeapons() {
       return true;
     },
     switchTo(index) {
-      if (index === state.slot || index < 0 || index >= SLOTS.length || state.swapLeft > 0) return false;
+      if (index < 0 || index >= SLOTS.length) return false;
+      if (index === state.slot || state.swapLeft > 0 || !owns(SLOTS[index])) return false;
       state.slot = index;
       state.swapLeft = 0.42;
       state.reloadLeft = 0;
@@ -265,25 +225,6 @@ export function createWeapons() {
       if (!onGround) value += gun.spreadAir;
       if (crouching) value *= gun.spreadCrouch;
       return value + state.bloom;
-    },
-    recoilRecover() {
-      return def().recoilRecover;
-    },
-    refill() {
-      for (const slot of SLOTS) {
-        ammo[slot].mag = WEAPON_DEFS[slot].magSize;
-        ammo[slot].reserve = WEAPON_DEFS[slot].reserve;
-      }
-      state.cooldown = 0;
-      state.reloadLeft = 0;
-      state.reloadSlot = null;
-      state.swapLeft = 0;
-      state.flash = 0;
-      state.kick = 0;
-      state.bloom = 0;
-      state.burst = 0;
-      state.slot = 0;
-      state.wasFiring = false;
     },
   };
 }

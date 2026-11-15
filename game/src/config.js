@@ -1,21 +1,52 @@
-// Every number the game balances on, in one place. The simulation reads these and takes no
-// magic value from anywhere else, so tuning a weapon or a bot never means hunting through code.
-// The numbers are chosen so that stopping to aim is worth it: spread tracks the player's speed,
-// recoil grows with the rate of fire, and a crouch is quieter and more accurate than a run.
+// Every number the game balances on, in one place. The simulation reads these and takes no magic
+// value from anywhere else, so tuning a weapon, a bot or the economy never means hunting through
+// code. The numbers are chosen so that stopping to aim is worth it: spread tracks the player's
+// speed, recoil grows with the rate of fire, and a crouch is quieter and more accurate than a run.
 export const CONFIG = {
   tick: {
     step: 1 / 60,
     maxSubSteps: 5,
   },
   match: {
-    roundSeconds: 95,
+    buySeconds: 12,
+    roundSeconds: 105,
     overSeconds: 6,
     killPoints: 100,
     roundPoints: 300,
     timeBonusPerSecond: 2,
+    bombBonus: 500,
     bannerSeconds: 3.2,
     feedLines: 4,
     feedSeconds: 5,
+  },
+  economy: {
+    start: 3200,
+    max: 16000,
+    kill: 300,
+    headshot: 100,
+    win: 3000,
+    lossBase: 1400,
+    lossStep: 500,
+    lossCap: 3400,
+    plant: 300,
+    defuse: 300,
+  },
+  bomb: {
+    plantSeconds: 3.2,
+    fuseSeconds: 40,
+    defuseSeconds: 5,
+    defuseRadius: 2.1,
+    botDefuseRadius: 2.4,
+    beepSeconds: [0.85, 0.22],
+  },
+  grenade: {
+    fuse: 1.5,
+    radius: 5.4,
+    damage: 118,
+    throwSpeed: 15,
+    upward: 3.4,
+    bounce: 0.32,
+    step: 1 / 120,
   },
   player: {
     health: 100,
@@ -36,6 +67,7 @@ export const CONFIG = {
     stepUp: 0.45,
     bobAmplitude: 0.022,
     recoilRecover: 2.4,
+    armourAbsorb: 0.5,
     spawnX: 0,
     spawnZ: 13.2,
     spawnYaw: 0,
@@ -76,9 +108,14 @@ export const CONFIG = {
   },
   effects: {
     tracerCount: 48,
-    tracerSeconds: 0.085,
+    tracerSeconds: 0.07,
     impactCount: 32,
     impactSeconds: 0.3,
     impactSize: 0.09,
+    sparkCount: 72,
+    sparkSeconds: 0.28,
+    decalCount: 40,
+    decalSeconds: 12,
+    flashSeconds: 0.42,
   },
 };

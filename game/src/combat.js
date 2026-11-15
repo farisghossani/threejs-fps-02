@@ -10,6 +10,7 @@ export const shotResult = {
   distance: 0,
   body: null,
   zone: null,
+  box: null,
 };
 
 const MAX_RANGE = 120;
@@ -19,6 +20,7 @@ export function resolveShot(origin, direction, colliders, bodies, shooter, maxDi
   let distance = world ? world.distance : maxDistance;
   let hitBody = null;
   let hitZone = null;
+  let hitBox = world ? world.box : null;
 
   for (let index = 0; index < bodies.length; index += 1) {
     const body = bodies[index];
@@ -29,6 +31,7 @@ export function resolveShot(origin, direction, colliders, bodies, shooter, maxDi
       distance = head;
       hitBody = body;
       hitZone = 'head';
+      hitBox = body.zones.head;
       continue;
     }
     const torso = raycastBox(body.zones.body, origin.x, origin.y, origin.z, direction.x, direction.y, direction.z, distance);
@@ -36,6 +39,7 @@ export function resolveShot(origin, direction, colliders, bodies, shooter, maxDi
       distance = torso;
       hitBody = body;
       hitZone = 'body';
+      hitBox = body.zones.body;
       continue;
     }
     const legs = raycastBox(body.zones.legs, origin.x, origin.y, origin.z, direction.x, direction.y, direction.z, distance);
@@ -43,6 +47,7 @@ export function resolveShot(origin, direction, colliders, bodies, shooter, maxDi
       distance = legs;
       hitBody = body;
       hitZone = 'legs';
+      hitBox = body.zones.legs;
     }
   }
 
@@ -50,7 +55,28 @@ export function resolveShot(origin, direction, colliders, bodies, shooter, maxDi
   shotResult.distance = distance;
   shotResult.body = hitBody;
   shotResult.zone = hitZone;
+  shotResult.box = hitBox;
   return shotResult;
+}
+
+// Which way the surface a shot landed on faces: the axis of the box it crossed with the least
+// room to spare. A mark laid on the wall therefore lies flat on the wall, and not in the air.
+export function surfaceNormal(out, box, x, y, z) {
+  const centreX = (box.min.x + box.max.x) / 2;
+  const centreY = (box.min.y + box.max.y) / 2;
+  const centreZ = (box.min.z + box.max.z) / 2;
+  const halfX = Math.max(0.0001, (box.max.x - box.min.x) / 2);
+  const halfY = Math.max(0.0001, (box.max.y - box.min.y) / 2);
+  const halfZ = Math.max(0.0001, (box.max.z - box.min.z) / 2);
+  const dx = (x - centreX) / halfX;
+  const dy = (y - centreY) / halfY;
+  const dz = (z - centreZ) / halfZ;
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  const az = Math.abs(dz);
+  if (ax >= ay && ax >= az) return out.set(Math.sign(dx), 0, 0);
+  if (ay >= az) return out.set(0, Math.sign(dy), 0);
+  return out.set(0, 0, Math.sign(dz));
 }
 
 // Whether a point can be seen from an eye: the ray to it must reach the arena's boxes no sooner
@@ -65,22 +91,9 @@ export function hasLineOfSight(colliders, fromX, fromY, fromZ, toX, toY, toZ) {
   return hit === null;
 }
 
-// The unit vector a pair of aim angles points along, and the muzzle a shot leaves from: a little
-// forward, a little down and to the side of the eye, where the weapon model sits. Both write into
-// a caller's vector, so a shot costs no allocation.
+// The unit vector a pair of aim angles points along. It writes into a caller's vector, so a shot
+// costs no allocation.
 export function aimDirection(out, yaw, pitch) {
   const cosPitch = Math.cos(pitch);
   return out.set(-Math.sin(yaw) * cosPitch, Math.sin(pitch), -Math.cos(yaw) * cosPitch);
-}
-
-export function muzzlePoint(out, eyeX, eyeY, eyeZ, yaw, pitch, side, drop) {
-  const cosPitch = Math.cos(pitch);
-  const forwardX = -Math.sin(yaw) * cosPitch;
-  const forwardY = Math.sin(pitch);
-  const forwardZ = -Math.cos(yaw) * cosPitch;
-  return out.set(
-    eyeX + forwardX * 0.5 + Math.cos(yaw) * side,
-    eyeY + forwardY * 0.5 - drop,
-    eyeZ + forwardZ * 0.5 - Math.sin(yaw) * side,
-  );
 }
